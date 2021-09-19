@@ -18,9 +18,6 @@
 
 package org.apache.skywalking.apm.plugin.jetty.v9.server;
 
-import java.lang.reflect.Method;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import org.apache.skywalking.apm.agent.core.context.CarrierItem;
 import org.apache.skywalking.apm.agent.core.context.ContextCarrier;
 import org.apache.skywalking.apm.agent.core.context.ContextManager;
@@ -35,13 +32,19 @@ import org.apache.skywalking.apm.network.trace.component.ComponentsDefine;
 import org.apache.skywalking.apm.plugin.jetty.v9.server.define.JettyInstrumentation;
 import org.eclipse.jetty.server.HttpChannel;
 
-public class HandleInterceptor implements InstanceMethodsAroundInterceptor {
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.lang.reflect.Method;
 
+public class HandleInterceptor implements InstanceMethodsAroundInterceptor {
+    private static boolean IS_SERVLET_CONTAINS_HEADER_METHOD_EXIST;
     private static boolean IS_SERVLET_GET_STATUS_METHOD_EXIST;
     private static final String SERVLET_RESPONSE_CLASS = "javax.servlet.http.HttpServletResponse";
+    private static final String CONTAINS_HEADER_METHOD = "containsHeader";
     private static final String GET_STATUS_METHOD = "getStatus";
 
     static {
+        IS_SERVLET_CONTAINS_HEADER_METHOD_EXIST = MethodUtil.isMethodExist(HandleInterceptor.class.getClassLoader(), SERVLET_RESPONSE_CLASS, CONTAINS_HEADER_METHOD, String.class.getName());
         IS_SERVLET_GET_STATUS_METHOD_EXIST = MethodUtil.isMethodExist(HandleInterceptor.class.getClassLoader(), SERVLET_RESPONSE_CLASS, GET_STATUS_METHOD);
     }
 
@@ -69,8 +72,11 @@ public class HandleInterceptor implements InstanceMethodsAroundInterceptor {
             HttpChannel httpChannel = (HttpChannel) objInst;
             HttpServletResponse servletResponse = httpChannel.getResponse();
             AbstractSpan span = ContextManager.activeSpan();
+            boolean businessError = IS_SERVLET_CONTAINS_HEADER_METHOD_EXIST && servletResponse.containsHeader("Error-Code");
             if (IS_SERVLET_GET_STATUS_METHOD_EXIST && servletResponse.getStatus() >= 400) {
-                span.errorOccurred();
+                if (!businessError) {
+                    span.errorOccurred();
+                }
                 Tags.STATUS_CODE.set(span, Integer.toString(servletResponse.getStatus()));
             }
             ContextManager.stopSpan();
